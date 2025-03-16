@@ -97,6 +97,10 @@ class TelegramPoster:
             message_text = f"<b>{article_data['title']}</b>\n\n"
             message_text += article_data['summary']
             
+            # Добавляем ссылку на оригинал, если она есть
+            if article_data.get('link'):
+                message_text += f"\n\n<a href='{article_data['link']}'>Читать полностью</a>"
+            
             # Добавляем теги, если они есть
             if article_data.get('tags') and len(article_data['tags']) > 0:
                 message_text += "\n\n"
@@ -109,10 +113,6 @@ class TelegramPoster:
                         formatted_tags.append(f"#{tag}")
                 message_text += " ".join(formatted_tags)
                 logger.info(f"Добавлены теги: {formatted_tags}")
-            
-            # Добавляем ссылку на оригинал, если она есть
-            if article_data.get('link'):
-                message_text += f"\n\n<a href='{article_data['link']}'>Читать полностью</a>"
             
             # Если есть изображение, отправляем с ним
             if article_data.get('image_url'):
@@ -209,7 +209,7 @@ def add_to_publication_queue(article):
             queue = []
     
     # Проверяем, есть ли теги в статье и корректно ли они представлены
-    if 'tags' not in article or article['tags'] is None:
+    if 'tags' not in article or not article['tags']:
         article['tags'] = []
     elif not isinstance(article['tags'], list):
         # Если теги не в виде списка, преобразуем их

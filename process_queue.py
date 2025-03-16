@@ -86,13 +86,16 @@ def process_next_article():
                 'summary': ai_response['summary'].replace('[ССЫЛКА]', ''),
                 'link': article['link'],
                 'image_url': article.get('image_url'),
-                'tags': ai_response.get('tags', [])
+                'ai_decision': {
+                    'tags': ai_response.get('tags', []),
+                    'approved': True
+                }
             }
             
             # Проверяем теги
             if 'tags' not in ai_response or not ai_response['tags']:
                 logger.warning(f"Статья '{article['title']}' не содержит тегов, добавляем стандартный тег")
-                publication_data['tags'] = ["#IT"]
+                publication_data['ai_decision']['tags'] = ["#IT"]
             else:
                 logger.info(f"Статья '{article['title']}' содержит теги: {ai_response['tags']}")
             
