@@ -56,7 +56,7 @@ def process_next_article():
     queue = get_processing_queue()
     
     if not queue:
-        logger.info("Очередь на обработку пуста")
+        # Убираем лишний лог о пустой очереди
         return False
         
     # Берем первую статью из очереди
@@ -71,7 +71,7 @@ def process_next_article():
     
     # Если ai_response равен None, значит статья уже была обработана ранее
     if ai_response is None:
-        logger.info(f"Статья '{article['title']}' уже была обработана ранее")
+        # Убираем лишний лог о ранее обработанной статье
         return "already_processed"
     
     # Если статья одобрена, добавляем её в очередь на публикацию
@@ -96,8 +96,6 @@ def process_next_article():
             if 'tags' not in ai_response or not ai_response['tags']:
                 logger.warning(f"Статья '{article['title']}' не содержит тегов, добавляем стандартный тег")
                 publication_data['ai_decision']['tags'] = ["#IT"]
-            else:
-                logger.info(f"Статья '{article['title']}' содержит теги: {ai_response['tags']}")
             
             # Добавляем в очередь на публикацию
             add_to_publication_queue(publication_data)
@@ -109,42 +107,52 @@ def process_next_article():
         if ai_response:
             logger.info(f"Статья '{article['title']}' отклонена нейросетью: {ai_response.get('reason')}")
         else:
-            logger.info(f"Статья '{article['title']}' не обработана из-за ошибки")
+            logger.error(f"Статья '{article['title']}' не обработана из-за ошибки")
         return True  # Возвращаем True, так как статья была обработана, даже если она была отклонена
 
-def main():
+def get_processed_articles():
     """
-    Основная функция для обработки очереди статей нейросетью
+    Получает список уже обработанных статей
     """
-    logger.info("Запуск обработки очереди статей нейросетью")
+    processed_file = "data/processed_articles.json"
     
-    try:
-        while True:
-            # Получаем очередь статей
-            queue = get_processing_queue()
-            
-            if not queue:
-                logger.info("Очередь на обработку пуста. Ожидание 10 секунд...")
-                time.sleep(10)
-                continue
-            
-            logger.info(f"В очереди на обработку {len(queue)} статей")
-            
-            # Обрабатываем следующую статью из очереди
-            result = process_next_article()
-            
-            # Пауза между запросами к нейросети только если статья была обработана нейросетью
-            if result is True:
-                logger.info(f"Ожидание {AI_REQUEST_DELAY} секунд до следующей обработки...")
-                time.sleep(AI_REQUEST_DELAY)
-            elif result == "already_processed":
-                # Если статья уже была обработана ранее, сразу переходим к следующей без кулдауна
-                continue
-            
-    except KeyboardInterrupt:
-        logger.info("Программа остановлена пользователем")
-    except Exception as e:
-        logger.error(f"Произошла ошибка: {e}")
+    if not os.path.exists(processed_file):
+        return []
         
-if __name__ == "__main__":
-    main() 
+    try:
+        with open(processed_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return []
+
+def add_to_processed_articles(article_link):
+    """
+    Добавляет статью в список обработанных
+    """
+    processed_file = "data/processed_articles.json"
+    
+    # Создаем директорию, если не существует
+    if not os.path.exists("data"):
+        os.makedirs("data")
+        
+    # Загружаем текущий список обработанных статей
+    processed = get_processed_articles()
+    
+    # Добавляем новую статью, если её ещё нет в списке
+    if article_link not in processed:
+        processed.append(article_link)
+        
+        # Сохраняем обновленный список
+        with open(processed_file, 'w', encoding='utf-8') as f:
+            json.dump(processed, f, ensure_ascii=False, indent=2)
+        
+        return True
+    
+    return False
+
+def is_article_processed(article_link):
+    """
+    Проверяет, была ли статья уже обработана
+    """
+    processed = get_processed_articles()
+    return article_link in processed 

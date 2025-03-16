@@ -48,15 +48,10 @@ def process_update(update):
             # Пример обработки команды
             if text.startswith('/status'):
                 asyncio.run(send_message_to_chat(chat_id, "Бот работает нормально!"))
-            
-            # Можно добавить другие команды по необходимости
-            
-        return True
     except Exception as e:
         logger.error(f"Ошибка при обработке обновления: {e}")
-        return False
 
-# Функция для отправки сообщения в чат
+# Функция для отправки сообщений в чат
 async def send_message_to_chat(chat_id, text, parse_mode=ParseMode.HTML):
     """
     Отправляет сообщение в указанный чат
@@ -65,88 +60,81 @@ async def send_message_to_chat(chat_id, text, parse_mode=ParseMode.HTML):
     text: текст сообщения
     parse_mode: режим форматирования текста
     """
-    request = HTTPXRequest(connection_pool_size=8, read_timeout=REQUEST_TIMEOUT, write_timeout=REQUEST_TIMEOUT, connect_timeout=REQUEST_TIMEOUT)
-    bot = Bot(token=TELEGRAM_TOKEN, request=request)
-    
     try:
+        request = HTTPXRequest(connection_pool_size=8, read_timeout=REQUEST_TIMEOUT, write_timeout=REQUEST_TIMEOUT, connect_timeout=REQUEST_TIMEOUT)
+        bot = Bot(token=TELEGRAM_TOKEN, request=request)
         await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
         return True
     except Exception as e:
         logger.error(f"Ошибка при отправке сообщения: {e}")
         return False
 
+# Класс для публикации статей в Telegram
 class TelegramPoster:
     def __init__(self):
         # Создаем HTTPXRequest с увеличенным таймаутом
-        request = HTTPXRequest(connection_pool_size=8, read_timeout=REQUEST_TIMEOUT, write_timeout=REQUEST_TIMEOUT, connect_timeout=REQUEST_TIMEOUT)
-        self.bot = Bot(token=TELEGRAM_TOKEN, request=request)
-        
+        self.request = HTTPXRequest(connection_pool_size=8, read_timeout=REQUEST_TIMEOUT, write_timeout=REQUEST_TIMEOUT, connect_timeout=REQUEST_TIMEOUT)
+        self.bot = Bot(token=TELEGRAM_TOKEN, request=self.request)
+    
     async def post_article(self, article_data, retry_count=0):
         """
         Публикует статью в Telegram канал
         
-        article_data: словарь с данными статьи:
-            - title: заголовок статьи
-            - summary: краткое содержание статьи
-            - link: ссылка на оригинал
-            - image_url: ссылка на изображение (может быть None)
-        retry_count: текущее количество повторных попыток
+        article_data: данные статьи (заголовок, текст, ссылка)
+        retry_count: счетчик повторных попыток
         """
         try:
+            title = article_data.get('title', 'Новая статья')
+            summary = article_data.get('summary', 'Нет описания')
+            link = article_data.get('link', '')
+            image_url = article_data.get('image_url')
+            
             # Формируем текст сообщения
-            message_text = f"<b>{article_data['title']}</b>\n\n"
-            message_text += article_data['summary']
+            message_text = f"<b>{title}</b>\n\n{summary}\n\n<a href='{link}'>Читать полностью</a>"
             
-            # Добавляем ссылку на оригинал, если она есть
-            if article_data.get('link'):
-                message_text += f"\n\n<a href='{article_data['link']}'>Читать полностью</a>"
-            
-            # Добавляем теги, если они есть
-            if article_data.get('tags') and len(article_data['tags']) > 0:
-                message_text += "\n\n"
-                # Убедимся, что теги начинаются с #
-                formatted_tags = []
-                for tag in article_data['tags']:
-                    if tag.startswith('#'):
-                        formatted_tags.append(tag)
-                    else:
-                        formatted_tags.append(f"#{tag}")
-                message_text += " ".join(formatted_tags)
-                logger.info(f"Добавлены теги: {formatted_tags}")
-            
-            # Если есть изображение, отправляем с ним
-            if article_data.get('image_url'):
-                await self.bot.send_photo(
-                    chat_id=CHANNEL_ID,
-                    photo=article_data['image_url'],
-                    caption=message_text,
-                    parse_mode=ParseMode.HTML
-                )
+            # Если есть изображение, отправляем его с подписью
+            if image_url:
+                try:
+                    # Отправляем фото с подписью
+                    await self.bot.send_photo(
+                        chat_id=CHANNEL_ID,
+                        photo=image_url,
+                        caption=message_text,
+                        parse_mode=ParseMode.HTML
+                    )
+                    logger.info(f"Статья '{title}' опубликована с изображением")
+                    return True
+                except Exception as e:
+                    logger.warning(f"Не удалось отправить изображение: {e}. Отправляем только текст.")
+                    # Если не удалось отправить изображение, отправляем только текст
+                    await self.bot.send_message(
+                        chat_id=CHANNEL_ID,
+                        text=message_text,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=False
+                    )
+                    logger.info(f"Статья '{title}' опубликована без изображения")
+                    return True
             else:
-                # Иначе отправляем просто текст
+                # Отправляем только текст
                 await self.bot.send_message(
                     chat_id=CHANNEL_ID,
                     text=message_text,
                     parse_mode=ParseMode.HTML,
                     disable_web_page_preview=False
                 )
+                logger.info(f"Статья '{title}' опубликована без изображения")
+                return True
                 
-            logger.info(f"Статья '{article_data['title']}' успешно опубликована в Telegram")
-            return True
-            
-        except (TimedOut, asyncio.TimeoutError) as e:
-            # Обработка таймаута
+        except (TimedOut, TelegramError) as e:
+            # Если произошла ошибка Telegram, пробуем еще раз
             if retry_count < MAX_RETRIES:
-                retry_count += 1
-                logger.warning(f"Таймаут при публикации статьи. Повторная попытка {retry_count}/{MAX_RETRIES} через {RETRY_DELAY} секунд...")
+                logger.warning(f"Ошибка при публикации статьи в Telegram: {e}. Повторная попытка {retry_count + 1}/{MAX_RETRIES}")
                 await asyncio.sleep(RETRY_DELAY)
-                return await self.post_article(article_data, retry_count)
+                return await self.post_article(article_data, retry_count + 1)
             else:
-                logger.error(f"Ошибка при публикации статьи в Telegram после {MAX_RETRIES} попыток: {e}")
+                logger.error(f"Не удалось опубликовать статью после {MAX_RETRIES} попыток: {e}")
                 return False
-        except TelegramError as e:
-            logger.error(f"Ошибка Telegram API при публикации статьи: {e}")
-            return False
         except Exception as e:
             logger.error(f"Ошибка при публикации статьи в Telegram: {e}")
             return False
@@ -158,7 +146,7 @@ class TelegramPoster:
         queue_file = "data/publication_queue.json"
         
         if not os.path.exists(queue_file):
-            logger.info("Очередь публикаций пуста")
+            # Убираем лишний лог о пустой очереди
             return
             
         try:
@@ -166,7 +154,7 @@ class TelegramPoster:
                 queue = json.load(f)
                 
             if not queue:
-                logger.info("Очередь публикаций пуста")
+                # Убираем лишний лог о пустой очереди
                 return
                 
             # Берем первую статью из очереди
@@ -208,58 +196,44 @@ def add_to_publication_queue(article):
         except json.JSONDecodeError:
             queue = []
     
-    # Проверяем, есть ли теги в статье и корректно ли они представлены
-    if 'tags' not in article or not article['tags']:
-        article['tags'] = []
-    elif not isinstance(article['tags'], list):
-        # Если теги не в виде списка, преобразуем их
-        if isinstance(article['tags'], str):
-            article['tags'] = [article['tags']]
-        else:
-            article['tags'] = []
-            logger.warning(f"Теги для статьи '{article['title']}' имеют неверный формат и были сброшены")
-    
     # Проверяем, нет ли уже такой статьи в очереди
-    if not any(q['link'] == article['link'] for q in queue):
+    if not any(q.get('link') == article.get('link') for q in queue):
         queue.append(article)
-        logger.info(f"Статья '{article['title']}' добавлена в очередь на публикацию с тегами: {article['tags']}")
-    
-    # Сохраняем обновленную очередь
-    with open(queue_file, 'w', encoding='utf-8') as f:
-        json.dump(queue, f, cls=DateTimeEncoder, ensure_ascii=False, indent=2)
+        logger.info(f"Статья '{article['title']}' добавлена в очередь на публикацию")
         
-    return len(queue)
+        # Сохраняем обновленную очередь
+        with open(queue_file, 'w', encoding='utf-8') as f:
+            json.dump(queue, f, cls=DateTimeEncoder, ensure_ascii=False, indent=2)
+        
+        return True
+    else:
+        # Убираем лишний лог о дубликате
+        return False
 
-# Асинхронная функция для запуска публикации из очереди
+# Функция для обработки очереди публикаций
 async def process_publication_queue():
     """
     Обрабатывает очередь публикаций
     """
     poster = TelegramPoster()
-    try:
-        return await poster.post_articles_from_queue()
-    except Exception as e:
-        logger.error(f"Ошибка при обработке очереди публикаций: {e}")
-        return False
+    return await poster.post_articles_from_queue()
 
-# Функция для запуска обработки очереди из синхронного кода
+# Функция для публикации следующей статьи из очереди
 def publish_next_from_queue():
     """
     Публикует следующую статью из очереди
     
     Возвращает:
-    - True: если статья успешно опубликована
-    - False: если произошла ошибка или очередь пуста
+    - True: если статья была успешно опубликована
+    - False: если произошла ошибка
+    - None: если очередь пуста
     """
-    try:
-        return asyncio.run(process_publication_queue())
-    except Exception as e:
-        logger.error(f"Ошибка при публикации из очереди: {e}")
-        return False
+    return asyncio.run(process_publication_queue())
 
+# Функция для обновления очереди публикаций
 def update_publication_queue(queue):
     """
-    Обновляет очередь статей на публикацию
+    Обновляет очередь публикаций
     """
     queue_file = "data/publication_queue.json"
     
