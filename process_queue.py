@@ -89,6 +89,13 @@ def process_next_article():
                 'tags': ai_response.get('tags', [])
             }
             
+            # Проверяем теги
+            if 'tags' not in ai_response or not ai_response['tags']:
+                logger.warning(f"Статья '{article['title']}' не содержит тегов, добавляем стандартный тег")
+                publication_data['tags'] = ["#IT"]
+            else:
+                logger.info(f"Статья '{article['title']}' содержит теги: {ai_response['tags']}")
+            
             # Добавляем в очередь на публикацию
             add_to_publication_queue(publication_data)
             return True

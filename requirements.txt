@@ -4,4 +4,5 @@ feedparser==6.0.10
 python-dotenv==1.0.0
 python-telegram-bot==20.7
 groq==0.4.1
-httpx==0.25.2 
+httpx==0.25.2
+flask==3.0.2 

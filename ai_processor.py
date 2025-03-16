@@ -111,6 +111,18 @@ def save_approved_article(article):
     # Загружаем текущий список одобренных статей
     approved_articles = get_approved_articles()
     
+    # Проверяем, есть ли теги в статье и корректно ли они представлены
+    if 'tags' not in article or article['tags'] is None:
+        article['tags'] = []
+        logger.warning(f"Статья '{article['title']}' не содержит тегов")
+    elif not isinstance(article['tags'], list):
+        # Если теги не в виде списка, преобразуем их
+        if isinstance(article['tags'], str):
+            article['tags'] = [article['tags']]
+        else:
+            article['tags'] = []
+            logger.warning(f"Теги для статьи '{article['title']}' имеют неверный формат и были сброшены")
+    
     # Добавляем новую статью
     approved_articles.append(article)
     
@@ -118,7 +130,7 @@ def save_approved_article(article):
     with open(APPROVED_ARTICLES_LOG, 'w', encoding='utf-8') as f:
         json.dump(approved_articles, f, cls=DateTimeEncoder, ensure_ascii=False, indent=2)
         
-    logger.info(f"Статья '{article['title']}' добавлена в лог одобренных статей")
+    logger.info(f"Статья '{article['title']}' добавлена в лог одобренных статей с тегами: {article['tags']}")
 
 def save_processed_article(article, ai_response=None):
     """
@@ -377,6 +389,20 @@ def process_article_with_ai(article):
             
             # Если статья одобрена, сохраняем её в лог одобренных
             if ai_response['approved']:
+                # Проверяем наличие тегов и их формат
+                if 'tags' not in ai_response or ai_response['tags'] is None:
+                    ai_response['tags'] = []
+                    logger.warning(f"Статья '{article['title']}' одобрена, но не содержит тегов")
+                elif not isinstance(ai_response['tags'], list):
+                    # Если теги не в виде списка, преобразуем их
+                    if isinstance(ai_response['tags'], str):
+                        ai_response['tags'] = [ai_response['tags']]
+                    else:
+                        ai_response['tags'] = []
+                        logger.warning(f"Теги для статьи '{article['title']}' имеют неверный формат и были сброшены")
+                
+                logger.info(f"Статья '{article['title']}' одобрена с тегами: {ai_response['tags']}")
+                
                 approved_article = {
                     'title': ai_response.get('title', article['title']),
                     'summary': ai_response['summary'],
@@ -420,6 +446,16 @@ def process_article_with_ai(article):
                 if reason_match:
                     extracted_data["reason"] = reason_match.group(1).replace('\\"', '"')
                 
+                # Пытаемся извлечь теги
+                tags_match = re.search(r'"tags":\s*(\[[^\]]*\])', response_text)
+                if tags_match:
+                    try:
+                        extracted_data["tags"] = json.loads(tags_match.group(1))
+                    except json.JSONDecodeError:
+                        extracted_data["tags"] = []
+                else:
+                    extracted_data["tags"] = []
+                
                 logger.info(f"Извлечены данные из ответа нейросети: {extracted_data}")
                 
                 # Сохраняем статью в лог обработанных с извлеченными данными
@@ -433,7 +469,7 @@ def process_article_with_ai(article):
                         'link': article['link'],
                         'source': article['source'],
                         'image_url': article.get('image_url'),
-                        'tags': ai_response.get('tags', []),
+                        'tags': extracted_data.get('tags', []),
                         'approved_at': datetime.now().isoformat()
                     }
                     save_approved_article(approved_article)

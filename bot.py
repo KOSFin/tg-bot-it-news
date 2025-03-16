@@ -100,7 +100,15 @@ class TelegramPoster:
             # Добавляем теги, если они есть
             if article_data.get('tags') and len(article_data['tags']) > 0:
                 message_text += "\n\n"
-                message_text += " ".join(article_data['tags'])
+                # Убедимся, что теги начинаются с #
+                formatted_tags = []
+                for tag in article_data['tags']:
+                    if tag.startswith('#'):
+                        formatted_tags.append(tag)
+                    else:
+                        formatted_tags.append(f"#{tag}")
+                message_text += " ".join(formatted_tags)
+                logger.info(f"Добавлены теги: {formatted_tags}")
             
             # Добавляем ссылку на оригинал, если она есть
             if article_data.get('link'):
@@ -200,10 +208,21 @@ def add_to_publication_queue(article):
         except json.JSONDecodeError:
             queue = []
     
+    # Проверяем, есть ли теги в статье и корректно ли они представлены
+    if 'tags' not in article or article['tags'] is None:
+        article['tags'] = []
+    elif not isinstance(article['tags'], list):
+        # Если теги не в виде списка, преобразуем их
+        if isinstance(article['tags'], str):
+            article['tags'] = [article['tags']]
+        else:
+            article['tags'] = []
+            logger.warning(f"Теги для статьи '{article['title']}' имеют неверный формат и были сброшены")
+    
     # Проверяем, нет ли уже такой статьи в очереди
     if not any(q['link'] == article['link'] for q in queue):
         queue.append(article)
-        logger.info(f"Статья '{article['title']}' добавлена в очередь на публикацию")
+        logger.info(f"Статья '{article['title']}' добавлена в очередь на публикацию с тегами: {article['tags']}")
     
     # Сохраняем обновленную очередь
     with open(queue_file, 'w', encoding='utf-8') as f:

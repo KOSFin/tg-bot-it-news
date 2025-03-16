@@ -10,6 +10,7 @@ from bot import add_to_publication_queue, publish_next_from_queue
 from utils import DateTimeEncoder
 from parse_news import check_news_sources
 from process_queue import process_next_article
+from background import keep_alive
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -270,38 +271,37 @@ def main():
     """
     logger.info("Запуск системы мониторинга русскоязычных IT-новостей")
     
-    # Создаем событие для сигнализации о завершении работы
+    # Создаем событие для остановки потоков
     stop_event = threading.Event()
     
-    # Создаем потоки для каждого процесса
-    parser_thread = threading.Thread(target=news_parser_thread, args=(stop_event,), daemon=True)
-    processor_thread = threading.Thread(target=ai_processor_thread, args=(stop_event,), daemon=True)
-    publisher_thread = threading.Thread(target=publisher_worker, args=(stop_event,), daemon=True)
-    
-    # Запускаем потоки
-    parser_thread.start()
-    processor_thread.start()
-    publisher_thread.start()
+    # Запускаем Flask-сервер в отдельном потоке
+    keep_alive()
     
     try:
-        # Бесконечный цикл, чтобы держать основной поток активным
-        while True:
-            time.sleep(1)
+        # Создаем и запускаем потоки
+        news_thread = threading.Thread(target=news_parser_thread, args=(stop_event,))
+        ai_thread = threading.Thread(target=ai_processor_thread, args=(stop_event,))
+        publisher_thread = threading.Thread(target=publisher_worker, args=(stop_event,))
+        
+        news_thread.start()
+        ai_thread.start()
+        publisher_thread.start()
+        
+        # Ждем завершения потоков
+        news_thread.join()
+        ai_thread.join()
+        publisher_thread.join()
+        
     except KeyboardInterrupt:
-        logger.info("Получен сигнал завершения (Ctrl+C)")
-        # Устанавливаем событие, чтобы сигнализировать потокам о необходимости завершения
+        logger.info("Получен сигнал остановки. Завершаем работу...")
         stop_event.set()
-        logger.info("Ожидание завершения потоков...")
         
-        # Даем потокам время на корректное завершение
-        parser_thread.join(timeout=5)
-        processor_thread.join(timeout=5)
-        publisher_thread.join(timeout=5)
+        # Ждем завершения потоков
+        news_thread.join()
+        ai_thread.join()
+        publisher_thread.join()
         
-        logger.info("Программа успешно завершена")
-    except Exception as e:
-        logger.error(f"Произошла ошибка: {e}")
-        stop_event.set()
+    logger.info("Программа завершена")
 
 if __name__ == "__main__":
     main() 
